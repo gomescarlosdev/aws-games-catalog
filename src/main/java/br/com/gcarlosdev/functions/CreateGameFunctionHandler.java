@@ -4,6 +4,7 @@ import br.com.gcarlosdev.model.Game;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.document.DynamoDB;
 import com.amazonaws.services.dynamodbv2.document.Item;
+import com.amazonaws.services.dynamodbv2.document.spec.PutItemSpec;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler;
 import com.google.gson.Gson;
@@ -16,6 +17,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.util.UUID;
 
 public class CreateGameFunctionHandler implements RequestStreamHandler {
 
@@ -32,39 +34,39 @@ public class CreateGameFunctionHandler implements RequestStreamHandler {
         var dynamoDBClient = AmazonDynamoDBClientBuilder.defaultClient();
         var dynamoDB = new DynamoDB(dynamoDBClient);
 
-        String id;
-        Item item = null;
-        try{
-            var request = (JSONObject) parser.parse(reader);
+        try {
+            JSONObject request = (JSONObject) parser.parse(reader);
+            if (request.get("body") != null) {
+                var body = (JSONObject) request.get("body");
+                context.getLogger().log("received body: " + body.toString());
 
-            if(request.get("pathParameters") != null){
-                var pathParameters = (JSONObject) request.get("pathParameters");
-                if (pathParameters.get("id") != null) {
-                    id = pathParameters.get("id").toString();
-                    item = dynamoDB.getTable(DYNAMODB_TABLE).getItem("id", id);
-                }
-            } else if(request.get("queryStringParameters") != null){
-                var queryStringParameters = (JSONObject) request.get("queryStringParameters");
-                if (queryStringParameters.get("id") != null) {
-                    id = queryStringParameters.get("id").toString();
-                    item = dynamoDB.getTable(DYNAMODB_TABLE).getItem("id", id);
-                }
+                var game = new Gson().fromJson(body.toJSONString(), Game.class);
+                var gameId = UUID.randomUUID().toString();
+
+                dynamoDB.getTable(DYNAMODB_TABLE).putItem(
+                        new PutItemSpec().withItem(
+                                new Item().withString("id", gameId)
+                                        .withString("title", game.getTitle())
+                                        .withString("genre", game.getGenre())
+                                        .withString("publisher", game.getPublisher())
+                                        .withNumber("release_year", game.getReleaseYear())
+                                        .withNumber("rating", game.getRating())
+                                        .withBoolean("multiplayer", game.isMultiplayer())
+                                        .withStringSet("platforms", game.getPlatforms())
+                        ));
+
+                response.put("statusCode", 201);
+                responseBody.put("body", String.format("{\"id\" : \"%s\"}", gameId));
+            } else {
+                response.put("statusCode", 400);
+                responseBody.put("error", "Body can't be null");
             }
-
-            if (item != null) {
-                var game = new Gson().fromJson(item.toJSON(), Game.class);
-                responseBody.put("game", game);
-                response.put("statusCode", 200);
-            }else {
-                responseBody.put("message", "Game Not Found");
-                response.put("statusCode", 404);
-            }
-
-            response.put("body", responseBody.toString());
-
-        }catch (Exception e){
-            context.getLogger().log("Error: "+ e.getMessage());
+        } catch (Exception e) {
+            context.getLogger().log("Error adding item to DynamoDB: "+ e.getMessage());
+            responseBody.put("error", "Failed to add item to DynamoDB.");
+            response.put("statusCode", 400);
         }
+        response.put("body", responseBody.toString());
 
         writer.write(response.toString());
         reader.close();

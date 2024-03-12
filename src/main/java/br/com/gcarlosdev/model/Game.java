@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -17,7 +17,7 @@ public class Game {
     private int releaseYear;
     private String publisher;
     private double rating;
-    private List<String> platforms;
+    private Set<String> platforms;
     private boolean multiplayer;
 
 }
